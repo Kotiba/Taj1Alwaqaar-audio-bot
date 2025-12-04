@@ -1,8 +1,0 @@
-[phases.setup]
-nixPkgs = ['nodejs-18_x', 'ffmpeg', 'python310', 'python310Packages.pip']
-
-[phases.install]
-cmds = ['python -m pip install -r requirements.txt']
-
-[start]
-cmd = 'python bot.py'
