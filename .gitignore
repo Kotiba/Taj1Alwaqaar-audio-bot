@@ -1,0 +1,26 @@
+# Python
+   __pycache__/
+   *.py[cod]
+   *$py.class
+   *.so
+   .Python
+   env/
+   venv/
+   
+   # Telegram sessions
+   *.session
+   *.session-journal
+   
+   # Environment variables
+   .env
+   
+   # Audio files (optional - remove if you want to commit them)
+   audio_files/*.mp3
+   audio_files/*.wav
+   !audio_files/.gitkeep
+   
+   # VSCode
+   .vscode/
+   
+   # macOS
+   .DS_Store
