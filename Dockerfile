@@ -23,8 +23,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy your app code
 COPY . .
 
-# Create the silence file (using the static ffmpeg we just copied)
+# Create a 1-second silent mp3 file (used as placeholder / keep-alive)
 RUN mkdir -p audio_files && \
-    ffmpeg -f lavfi -i anullsrc=r=44100:mono -t 1 -q:a 9 -acodec libmp3lame audio_files/silence.mp3
-
+    ffmpeg -f lavfi -i anullsrc=channel_layout=mono:sample_rate=44100 \
+           -t 1 -c:a libmp3lame -q:a 4 audio_files/silence.mp3
+           
 CMD ["python", "main.py"]
