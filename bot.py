@@ -1,161 +1,218 @@
 import os
 import asyncio
+import ffmpeg
 from telethon import TelegramClient, events
 from pytgcalls import PyTgCalls
 from pytgcalls.types import AudioPiped
+from dotenv import load_dotenv
 
-# Configuration from environment variables
-API_ID = int(os.getenv('API_ID'))
-API_HASH = os.getenv('API_HASH')
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-SESSION_NAME = os.getenv('SESSION_NAME', 'audio_bot')
+load_dotenv()
 
-# Initialize clients
+# =========================
+# CONFIG
+# =========================
+API_ID = int(os.getenv("API_ID"))
+API_HASH = os.getenv("API_HASH")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+SESSION_NAME = os.getenv("SESSION_NAME", "audio_bot")
+
 client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
 call_py = PyTgCalls(client)
 
-# Track current state
 current_chat_id = None
 is_in_call = False
 
-@client.on(events.NewMessage(pattern='/start'))
+# =========================
+# START
+# =========================
+@client.on(events.NewMessage(pattern="/start"))
 async def start_handler(event):
-    """Welcome message"""
     await event.reply(
         "🎵 **Audio Bot Ready!**\n\n"
-        "Commands:\n"
-        "/join - Join the voice call\n"
-        "/play <filename> - Play an audio file\n"
-        "/stop - Stop playback\n"
-        "/leave - Leave the voice call\n"
-        "/list - List available audio files"
+        "/join - Join voice chat\n"
+        "/play <file> <start> <end>\n"
+        "/stop - Stop audio\n"
+        "/leave - Leave voice chat\n"
+        "/list - List audio files\n\n"
+        "✅ You can also SEND an audio file to auto-play it."
     )
 
-@client.on(events.NewMessage(pattern='/join'))
+# =========================
+# JOIN CALL
+# =========================
+@client.on(events.NewMessage(pattern="/join"))
 async def join_handler(event):
-    """Join the group voice call"""
     global current_chat_id, is_in_call
-    
+
     try:
         chat = await event.get_chat()
         current_chat_id = chat.id
-        
-        # Join the call
+
         await call_py.join_group_call(
             chat.id,
-            AudioPiped('audio_files/silence.mp3')
+            AudioPiped("audio_files/silence.mp3"),
         )
-        
+
         is_in_call = True
-        await event.reply("✅ Joined the voice call! Use /play to stream audio.")
-    except Exception as e:
-        await event.reply(f"❌ Error joining call: {str(e)}")
+        await event.reply("✅ Joined the voice call!")
 
-@client.on(events.NewMessage(pattern='/play (.+)'))
+    except Exception as e:
+        await event.reply(f"❌ Error joining call: {e}")
+
+# =========================
+# PLAY WITH TIME RANGE
+# =========================
+@client.on(events.NewMessage(pattern=r"/play (.+)"))
 async def play_handler(event):
-    """Play an audio file in the call"""
     global is_in_call
-    
+
     if not is_in_call:
-        await event.reply("❌ Not in a call! Use /join first.")
+        await event.reply("❌ Use /join first.")
         return
-    
-    filename = event.pattern_match.group(1).strip()
-    filepath = f"audio_files/{filename}"
-    
-    if not os.path.exists(filepath):
-        await event.reply(f"❌ File '{filename}' not found. Use /list to see available files.")
+
+    parts = event.text.split()
+
+    if len(parts) < 2:
+        await event.reply("❌ Usage: /play filename [start] [end]")
         return
-    
+
+    filename = parts[1]
+    start_time = int(parts[2]) if len(parts) >= 3 else 0
+    end_time = int(parts[3]) if len(parts) >= 4 else None
+
+    input_path = f"audio_files/{filename}"
+    output_path = f"audio_files/trimmed_{filename}"
+
+    if not os.path.exists(input_path):
+        await event.reply("❌ File not found. Use /list.")
+        return
+
     try:
+        stream = ffmpeg.input(input_path, ss=start_time)
+
+        if end_time:
+            stream = ffmpeg.output(
+                stream,
+                output_path,
+                t=end_time - start_time,
+                acodec="libmp3lame",
+            )
+        else:
+            stream = ffmpeg.output(stream, output_path)
+
+        ffmpeg.run(stream, overwrite_output=True)
+
         await call_py.change_stream(
             current_chat_id,
-            AudioPiped(filepath)
+            AudioPiped(output_path),
         )
-        await event.reply(f"🎵 Now playing: **{filename}**")
-    except Exception as e:
-        await event.reply(f"❌ Error playing file: {str(e)}")
 
-@client.on(events.NewMessage(pattern='/stop'))
+        if end_time:
+            await event.reply(
+                f"🎵 Playing **{filename}** from {start_time}s to {end_time}s"
+            )
+        else:
+            await event.reply(
+                f"🎵 Playing **{filename}** from {start_time}s onward"
+            )
+
+    except Exception as e:
+        await event.reply(f"❌ Playback error: {e}")
+
+# =========================
+# STOP
+# =========================
+@client.on(events.NewMessage(pattern="/stop"))
 async def stop_handler(event):
-    """Stop current playback"""
     global is_in_call
-    
+
     if not is_in_call:
-        await event.reply("❌ Not in a call!")
+        await event.reply("❌ Not in a call.")
         return
-    
+
     try:
         await call_py.change_stream(
             current_chat_id,
-            AudioPiped('audio_files/silence.mp3')
+            AudioPiped("audio_files/silence.mp3"),
         )
-        await event.reply("⏹️ Playback stopped.")
+        await event.reply("⏹️ Stopped.")
     except Exception as e:
-        await event.reply(f"❌ Error stopping: {str(e)}")
+        await event.reply(f"❌ Stop error: {e}")
 
-@client.on(events.NewMessage(pattern='/leave'))
+# =========================
+# LEAVE
+# =========================
+@client.on(events.NewMessage(pattern="/leave"))
 async def leave_handler(event):
-    """Leave the voice call"""
     global is_in_call
-    
+
     if not is_in_call:
-        await event.reply("❌ Not in a call!")
+        await event.reply("❌ Not in a call.")
         return
-    
+
     try:
         await call_py.leave_group_call(current_chat_id)
         is_in_call = False
-        await event.reply("👋 Left the voice call.")
+        await event.reply("👋 Left the call.")
     except Exception as e:
-        await event.reply(f"❌ Error leaving: {str(e)}")
+        await event.reply(f"❌ Leave error: {e}")
 
-@client.on(events.NewMessage(pattern='/list'))
+# =========================
+# LIST FILES
+# =========================
+@client.on(events.NewMessage(pattern="/list"))
 async def list_handler(event):
-    """List available audio files"""
-    audio_dir = 'audio_files'
-    
-    if not os.path.exists(audio_dir):
-        await event.reply("❌ No audio files directory found.")
-        return
-    
-    files = [f for f in os.listdir(audio_dir) if f.endswith(('.mp3', '.wav', '.ogg', '.m4a'))]
-    
-    if not files:
-        await event.reply("📂 No audio files available. Upload files to the audio_files directory.")
-        return
-    
-    file_list = "\n".join([f"• {f}" for f in files])
-    await event.reply(f"📂 **Available Audio Files:**\n\n{file_list}")
+    files = os.listdir("audio_files")
+    audio_files = [f for f in files if f.endswith((".mp3", ".wav", ".ogg", ".m4a"))]
 
-async def create_silence_file():
-    """Create a 1-second silence MP3 file if it doesn't exist"""
-    silence_path = 'audio_files/silence.mp3'
-    if not os.path.exists(silence_path):
-        try:
-            # Create a minimal MP3 silence file (this is a workaround)
-            # In production, you'd use ffmpeg to generate this
-            print("Note: Please create a silence.mp3 file in audio_files/ directory")
-        except Exception as e:
-            print(f"Warning: Could not create silence file: {e}")
+    if not audio_files:
+        await event.reply("📂 No audio files found.")
+        return
 
+    text = "\n".join(f"• {f}" for f in audio_files)
+    await event.reply(f"📂 Available files:\n\n{text}")
+
+# =========================
+# AUDIO UPLOAD AUTO-PLAY
+# =========================
+@client.on(events.NewMessage)
+async def audio_upload_handler(event):
+    global is_in_call
+
+    if not event.audio and not event.voice:
+        return
+
+    if not is_in_call:
+        await event.reply("❌ Join the call first with /join.")
+        return
+
+    os.makedirs("audio_files", exist_ok=True)
+
+    file_path = await event.download_media(file="audio_files/")
+    filename = os.path.basename(file_path)
+
+    try:
+        await call_py.change_stream(
+            current_chat_id,
+            AudioPiped(file_path),
+        )
+        await event.reply(f"🎵 Uploaded & now playing: {filename}")
+
+    except Exception as e:
+        await event.reply(f"❌ Playback error: {e}")
+
+# =========================
+# MAIN
+# =========================
 async def main():
-    """Start the bot"""
-    print("Starting Audio Bot...")
-    
-    # Create audio_files directory if it doesn't exist
-    os.makedirs('audio_files', exist_ok=True)
-    
-    # Create silence file
-    await create_silence_file()
-    
+    os.makedirs("audio_files", exist_ok=True)
+
+    print("✅ Starting bot...")
     await client.start(bot_token=BOT_TOKEN)
     await call_py.start()
-    
     print("✅ Bot is running!")
-    print(f"Bot username: {(await client.get_me()).username}")
-    
+
     await client.run_until_disconnected()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())
