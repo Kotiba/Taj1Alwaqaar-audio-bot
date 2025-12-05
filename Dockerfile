@@ -1,28 +1,30 @@
-# Use the same base image
+# 1. We start with a dedicated image that contains a static FFmpeg binary
+FROM mwader/static-ffmpeg:7.0 AS ffmpeg-source
+
+# 2. We start your actual Python image
 FROM python:3.10-slim
 
-# Set environment variables for cleaner logging and performance
+# Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-
 WORKDIR /app
 
-# FIX: Added '--no-install-recommends' to skip heavy GUI/X11 dependencies
-# This reduces the download from ~700MB to ~50MB and prevents the timeout.
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg && \
-    rm -rf /var/lib/apt/lists/*
+# --- THE FIX ---
+# Instead of 'apt-get install ffmpeg', we copy the binary from the first stage.
+# This skips installing 200+ dependencies (X11, Wayland, Mesa, etc).
+COPY --from=ffmpeg-source /ffmpeg /usr/local/bin/
+COPY --from=ffmpeg-source /ffprobe /usr/local/bin/
+# ----------------
 
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application
+# Copy your app code
 COPY . .
 
-# Generate the silence file (same logic as your logs, just cleaner format)
+# Create the silence file (using the static ffmpeg we just copied)
 RUN mkdir -p audio_files && \
     ffmpeg -f lavfi -i anullsrc=r=44100:mono -t 1 -q:a 9 -acodec libmp3lame audio_files/silence.mp3
 
-# Don't forget to set your start command (update 'main.py' to your actual script)
 CMD ["python", "main.py"]
