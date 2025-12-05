@@ -27,5 +27,5 @@ COPY . .
 RUN mkdir -p audio_files && \
     ffmpeg -f lavfi -i anullsrc=channel_layout=mono:sample_rate=44100 \
            -t 1 -c:a libmp3lame -q:a 4 audio_files/silence.mp3
-           
-CMD ["python", "main.py"]
+
+CMD ["python", "bot.py"]
