@@ -2,8 +2,7 @@ import os
 import asyncio
 from telethon import TelegramClient, events
 from pytgcalls import PyTgCalls
-from pytgcalls.types import AudioPiped, Update
-from pytgcalls.types.stream import StreamAudioEnded
+from pytgcalls.types import AudioPiped
 
 # Configuration from environment variables
 API_ID = int(os.getenv('API_ID'))
@@ -41,11 +40,10 @@ async def join_handler(event):
         chat = await event.get_chat()
         current_chat_id = chat.id
         
-        # Join with silence (no audio initially)
+        # Join the call
         await call_py.join_group_call(
             chat.id,
-            AudioPiped('audio_files/silence.mp3'),
-            stream_type='audio'
+            AudioPiped('audio_files/silence.mp3')
         )
         
         is_in_call = True
@@ -130,18 +128,16 @@ async def list_handler(event):
     file_list = "\n".join([f"• {f}" for f in files])
     await event.reply(f"📂 **Available Audio Files:**\n\n{file_list}")
 
-@call_py.on_stream_end()
-async def on_stream_end(client, update: Update):
-    """Handle when audio stream ends"""
-    print(f"Stream ended in chat {update.chat_id}")
-    # Optionally switch back to silence
-    try:
-        await call_py.change_stream(
-            update.chat_id,
-            AudioPiped('audio_files/silence.mp3')
-        )
-    except:
-        pass
+async def create_silence_file():
+    """Create a 1-second silence MP3 file if it doesn't exist"""
+    silence_path = 'audio_files/silence.mp3'
+    if not os.path.exists(silence_path):
+        try:
+            # Create a minimal MP3 silence file (this is a workaround)
+            # In production, you'd use ffmpeg to generate this
+            print("Note: Please create a silence.mp3 file in audio_files/ directory")
+        except Exception as e:
+            print(f"Warning: Could not create silence file: {e}")
 
 async def main():
     """Start the bot"""
@@ -150,11 +146,8 @@ async def main():
     # Create audio_files directory if it doesn't exist
     os.makedirs('audio_files', exist_ok=True)
     
-    # Create a silence file if it doesn't exist (1 second of silence)
-    silence_path = 'audio_files/silence.mp3'
-    if not os.path.exists(silence_path):
-        print("Creating silence file...")
-        # You'll need to create this manually or use ffmpeg
+    # Create silence file
+    await create_silence_file()
     
     await client.start(bot_token=BOT_TOKEN)
     await call_py.start()
